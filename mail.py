@@ -7,9 +7,7 @@ from email.mime.text import MIMEText
 
 
 def send_mail_to(destination,obj_id):
-
-    print "in send mailllllllllllllllllllllll",
-    print destination, obj_id
+   
     me = "towards.my.dream13@gmail.com"
     you = destination
     link = "http://localhost:9090/confirmation/{}".format(obj_id)
