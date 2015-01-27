@@ -8,7 +8,9 @@ import tornado.websocket
 import os.path
 import uuid
 import mail
+#import mongodb as mongo 
 import pymongo
+from bson.objectid import ObjectId
 
 from tornado.options import define, options
 
@@ -23,7 +25,8 @@ class Application(tornado.web.Application):
             (r'/login', LoginHandler),
             (r'/logout', LogoutHandler),
             (r'/signup', SignUpHandler),
-           
+            (r'/confirmation/([^/]+)', ConfirmationHandler),
+            
         ]
         settings = dict(
             cookie_secret="__TODO:_GENERATE_YOUR_OWN_RANDOM_VALUE_HERE__",
@@ -36,13 +39,10 @@ class Application(tornado.web.Application):
 
 
 class ChatSocketHandler(tornado.websocket.WebSocketHandler):
-    waiters = {}
+    waiters = []
     cache = []
     cache_size = 200
-    print "waiters"+str(waiters)
-    print "cache"+str(cache)+"  len=="+str(cache_size)
-
-
+  
     def check_origin(self, origin):
         return True
 
@@ -52,30 +52,27 @@ class ChatSocketHandler(tornado.websocket.WebSocketHandler):
         return {}
 
     def open(self):
-        #ChatSocketHandler.waiters[str(id(self))] = self
-        #self.clear_cookie("user")
-        #print "on opening",
-        #print type(self),
-        #print id(self)
         
         user_json = self.get_secure_cookie("user")
         if user_json:
             print tornado.escape.json_decode(user_json)
         else:
             print "Noooooooooooooooooooooooooooo"
-        ChatSocketHandler.waiters[tornado.escape.json_decode(user_json)] = self
-        #ChatSocketHandler.waiters.add(self)
+        new_user = {}
+        new_user['id'] = id(self)
+        new_user['name'] = tornado.escape.json_decode(user_json)
+        new_user[tornado.escape.json_decode(user_json)] = self
+        ChatSocketHandler.waiters.append(new_user)
+
+        print ChatSocketHandler.waiters
 
     def on_close(self):
-        user_json = self.get_secure_cookie("user")
-       
-        
-        del ChatSocketHandler.waiters[tornado.escape.json_decode(user_json)]
-        #print "on closing",
-        #print type(self),
-        #print id(self)
+        """ when websocket close, remove connection from waiters"""
 
-        #ChatSocketHandler.waiters.remove(self)
+        user_json = self.get_secure_cookie("user")
+        #ChatSocketHandler.waiters[tornado.escape.json_decode(user_json)]
+        ChatSocketHandler.waiters = [ d for d in ChatSocketHandler.waiters if d.get('id') != id(self)]
+       
 
     @classmethod
     def update_cache(cls, chat):
@@ -92,35 +89,51 @@ class ChatSocketHandler(tornado.websocket.WebSocketHandler):
        
         logging.info("sending message to %d waiters", len(cls.waiters))
         #print cls.waiters.keys()
+        
+        
         for waiter in cls.waiters:
             try:
-         #       print "needed connection"
-          #      print cls.waiters['jibin']
-                cls.waiters[waiter].write_message(chat)
+            	current_user =  waiter['name'] 
+            	chat['current_user'] = current_user
+            	chat["html"] = tornado.escape.to_basestring(
+                  ChatSocketHandler.render_string("message.html", message=chat))
+            	
+            	
+            	waiter[current_user].write_message(chat)
             except:
                 logging.error("Error sending message", exc_info=True)
 
     def on_message(self, message):
        
-        #print "id of user messaged",
-        #print id(self)
-        print   "MMMMMMMMMMMMMMMMMMMMMMMMMMM",
-        print message
-        #print id(ChatSocketHandler.ws_connection)
+        
         user_json = self.get_secure_cookie("user")
         logging.info("got message %r", message)
         parsed = tornado.escape.json_decode(message)
         chat = {
             "id": str(uuid.uuid4()),
             "body": parsed["body"],
-           # "user" : str(id(self))
-             "user" : tornado.escape.json_decode(user_json)
+            "user" : tornado.escape.json_decode(user_json)
             }
-        chat["html"] = tornado.escape.to_basestring(
-            self.render_string("message.html", message=chat))
-        #print chat
+        
+        logined_users = [v for d in ChatSocketHandler.waiters for k,v in d.iteritems() if k=='name']
+        print logined_users
+        chat['logined_users'] = str(logined_users)
+        
         ChatSocketHandler.update_cache(chat)
-        ChatSocketHandler.send_updates(chat)
+        #ChatSocketHandler.send_updates(chat)
+        for waiter in ChatSocketHandler.waiters:
+            try:
+            	current_user =  waiter['name'] 
+            	
+            	chat['current_user'] = current_user
+            	chat["html"] = tornado.escape.to_basestring(
+                  self.render_string("message.html", message=chat))
+            	
+            	
+            	waiter[current_user].write_message(chat)
+            except:
+                logging.error("Error sending message", exc_info=True)
+
 
 
 
@@ -128,8 +141,6 @@ class ChatSocketHandler(tornado.websocket.WebSocketHandler):
 
 
 class BaseHandler(tornado.web.RequestHandler):
-
-    
 
     def get_login_url(self):
       return u"/login"
@@ -143,33 +154,33 @@ class BaseHandler(tornado.web.RequestHandler):
         else:
            return None
 
-
-
-
-
-
 class LoginHandler(BaseHandler):
 
-    def get(self):
-        self.render("login_new.html", next=self.get_argument("next","/"))
+	def get(self):
+		self.render("login_new.html", next=self.get_argument("next","/"))
+		client = pymongo.Connection("localhost", 27017)
+		db = client.chat_database
+		print db.collection_names()
 
-    def post(self):
-        username = self.get_argument("username", "")
-        password = self.get_argument("password", "")  
-       # auth = (username == 'jibin' and password == "j")
-        #if auth:
-        self.set_current_user(username)
+	def post(self):
+		username = self.get_argument("username", "")
+		password = self.get_argument("password", "")  
+		#auth = (username == 'jibin' and password == "j")
+		#if auth:
+		client = pymongo.Connection("localhost", 27017)
+		db = client.chat_database
+		if password == db.users.find_one({"Username": username})['password']:
+			self.set_current_user(username)
+			self.redirect(self.get_argument("next", u"/"))
+		else:
+			error_msg = u"?error=" + tornado.escape.url_escape("Login incorrect.")
+			self.redirect(u"/login" + error_msg)
 
-        self.redirect(self.get_argument("next", u"/"))
-        #else:
-         #   error_msg = u"?error=" + tornado.escape.url_escape("Login incorrect.")
-#            self.redirect(u"/login" + error_msg)
-
-    def set_current_user(self, user):
-        if user:
-            self.set_secure_cookie("user", tornado.escape.json_encode(user))
-        else:
-            self.clear_cookie("user")
+	def set_current_user(self, user):
+		if user:
+			self.set_secure_cookie("user", tornado.escape.json_encode(user))
+		else:
+			self.clear_cookie("user")
 
 class LogoutHandler(BaseHandler):
     print "in log out"
@@ -182,27 +193,48 @@ class LogoutHandler(BaseHandler):
     get = post
 
 class SignUpHandler(tornado.websocket.WebSocketHandler):
+
     def get(self):
         self.render("signup.html")
+
     def post(self):
         username = self.get_argument("username", "")
         email = self.get_argument("email", "")
         password = self.get_argument("password", "")  
 
         client = pymongo.Connection("localhost", 27017)
-        db = client.test_database
+        db = client.chat_database
         collection = db.test_collection
-        user = { "Username": username ,"email": email, "password": password }
+        user = { "Username": username ,"email": email, "password": password ,'conf_status' : 0}
         users = db.users
         user_id = users.insert(user)
 
         #print username,email,password
-       # mail.send_mail_to('jibin.jacob13@gmail.com')
+        obj_id = db.users.find_one({"Username": username})['_id']
+        mail.send_mail_to('jibin.jacob13@gmail.com',obj_id)
         print user_id
         print db.collection_names()
         for post in users.find():
            print post
+        #client.close()
         self.finish("<html><body>A verfication mail is sent to your mail <a href=email ></body></html>")
+
+class ConfirmationHandler(tornado.websocket.WebSocketHandler):
+
+    def get(self, obj_id):
+	user = {}
+	client = pymongo.Connection("localhost", 27017)
+	db = client.chat_database
+	users = db.users
+	user['conf_status'] = 1
+	#db.users.find_one({"_id": ObjectId(obj_id)})['conf_status']
+        
+       
+	db.users.update({'_id': ObjectId(obj_id)}, {"$set": user}, upsert=False)
+	for post in users.find():
+           print post
+      
+	self.redirect(u"/login")
 
       
       

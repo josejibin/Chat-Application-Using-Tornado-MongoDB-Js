@@ -1,8 +1,6 @@
 <div class="message" id="m{{ message["id"] }}">
- <div class="media-msg" >
-            
+	<div class="media-msg" >
+        <small class="text-muted">{% module linkify(message["user"]) %}</small> :
             {% module linkify(message["body"]) %}
-			<br />
-			<small class="text-muted">:{% module linkify(message["user"]) %}</small>
-			</div>
+	</div>
 </div>

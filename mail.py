@@ -6,9 +6,13 @@ from email.mime.text import MIMEText
 
 
 
-def send_mail_to(destination):
+def send_mail_to(destination,obj_id):
+
+    print "in send mailllllllllllllllllllllll",
+    print destination, obj_id
     me = "towards.my.dream13@gmail.com"
-    you = "destination"
+    you = destination
+    link = "http://localhost:9090/confirmation/{}".format(obj_id)
 
 
     msg = MIMEMultipart('alternative')
@@ -23,11 +27,11 @@ def send_mail_to(destination):
     <body>
         <p>Hi!<br>
         HWelcome to chat application<br>
-        Here is the <a href="http://www.python.org">confiramation link</a> you wanted.
+        Here is the <a href={} >confirmation link</a> you wanted.
         </p>
     </body>
     </html>
-    """
+    """.format(link,link)
     try:
         part2 = MIMEText(html, 'html')
         msg.attach(part2)

@@ -53,18 +53,24 @@ var updater = {
     },
 
     showMessage: function(message) {
-        //alert(JSON.stringify(message))
-        var existing = $("#m" + message.id);
-        
-        if (existing.length > 0) return;
 
-        var node = $(message.html);
+        var $user = $('#user');
+        $user.attr("class", 'label label-info');
+        $user.text(message.current_user);
+  
+        var $user = $('#loginned_users');
+        $user.attr("class", 'label label-info');
+        $user.hide();
+        $user.fadeIn("slow");
+        $user.text(message.logined_users);
+  
         
+        var existing = $("#m" + message.id);
+        if (existing.length > 0) return;
+        var node = $(message.html); 
         node.hide();
         $("#inbox").append(node);
         node.slideDown();
-        //alert("dv")
-        //alert(node)
-        ///alert(existing)
+
     }
 };
